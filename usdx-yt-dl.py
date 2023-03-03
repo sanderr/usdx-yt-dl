@@ -234,7 +234,7 @@ class Song:
     def _download(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             subprocess.check_call(
-                ["yt-dlp", "-xk", "--audio-format", "mp3", self.metadata.video_tag],
+                ["yt-dlp", "-xk", "--audio-format", "mp3", "--", self.metadata.video_tag],
                 cwd=temp_dir,
             )
 
