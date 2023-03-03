@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Optional, Type, TypeVar
 
 
-COMMENT_PREFIX: str = "usbd-dl:"
+COMMENT_PREFIX: str = "usdx-yt-dl:"
 UTF8_CONVERSIONS: abc.Mapping[bytes, bytes] = {
     bytes.fromhex('92'): b"'",
     bytes.fromhex('b4'): b"'",
