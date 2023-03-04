@@ -136,9 +136,15 @@ class Metadata:
 
     @classmethod
     def _video_tag_from_usdb_metadata(cls, tag: str) -> Optional[str]:
+        def regex(*, audio_only: bool = False) -> str:
+            return "(.*,)?%s=([^, \t\n\r\f\v]+)(,.*)?" % ("a" if audio_only else "v")
+
         # TODO: precompile all regexes
-        match: Optional[re.Match] = re.fullmatch("v=([^, \t\n\r\f\v]+)(,.*)?", tag)
-        return match.group(1) if match is not None else None
+        video_match: Optional[re.Match] = re.fullmatch(regex(), tag)
+        if video_match is not None:
+            return video_match.group(2)
+        audio_match: Optional[re.Match] = re.fullmatch(regex(audio_only=True), tag)
+        return audio_match.group(2) if audio_match is not None else None
 
 
 class Song:
