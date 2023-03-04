@@ -141,10 +141,10 @@ class Metadata:
 
         # TODO: precompile all regexes
         video_match: Optional[re.Match] = re.fullmatch(regex(), tag)
-        if video_match is not None:
-            return video_match.group(2)
         audio_match: Optional[re.Match] = re.fullmatch(regex(audio_only=True), tag)
-        return audio_match.group(2) if audio_match is not None else None
+        if video_match is not None and audio_match is not None:
+            raise ConservativeSkip("Found both audio and video id, this is currently not supported")
+        return video_match.group(2) if video_match is not None else audio_match.group(2) if audio_match is not None else None
 
 
 class Song:
