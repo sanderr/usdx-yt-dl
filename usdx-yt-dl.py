@@ -17,10 +17,6 @@ from typing import Optional, Type, TypeVar
 
 
 COMMENT_PREFIX: str = "usdx-yt-dl:"
-UTF8_CONVERSIONS: abc.Mapping[bytes, bytes] = {
-    bytes.fromhex('92'): b"'",
-    bytes.fromhex('b4'): b"'",
-}
 
 
 M = TypeVar("M", bound="Metadata")
@@ -60,9 +56,6 @@ class UnknownMediaFormat(SkipException):
     pass
 
 
-# TODO: UnicodeDecodeError
-
-
 def utf8_contents(path: str) -> str:
     """
     Reads the contents of the file at the given path, making a best effort to convert any non UTF8 characters.
@@ -70,13 +63,17 @@ def utf8_contents(path: str) -> str:
     with open(path, "rb") as fd:
         contents: bytes = fd.read()
         try:
-            return functools.reduce(
-                lambda acc, convert: acc.replace(convert, UTF8_CONVERSIONS[convert]),
-                UTF8_CONVERSIONS,
-                contents,
-            ).decode("utf-8")
-        except UnicodeDecodeError as e:
-            raise EncodingError(f"File at '{path}' contains unexpected non-utf8 bytes") from e
+            return contents.decode("utf-8")
+        except UnicodeDecodeError:
+            # Many files seem to use this encoding
+            result: str = contents.decode("CP1252")
+            try:
+                # verify all characters are utf-8 compatible
+                result.encode("utf-8")
+            except UnicodeEncodeError as e:
+                raise EncodingError(f"File at '{path}' contains unexpected utf-8 incompatible bytes") from e
+            else:
+                return result
 
 
 @dataclass(frozen=True, kw_only=True)
