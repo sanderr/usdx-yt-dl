@@ -241,23 +241,24 @@ class Song:
                 cwd=temp_dir,
             )
 
-            webm_files: abc.Sequence[str] = glob.glob(
+            video_files: abc.Sequence[str] = [
                 # account for intermediate *.f<format_id>.webm files
-                os.path.join(glob.escape(temp_dir), "*].webm",)
-            )
-            if len(webm_files) != 1:
-                raise UnknownMediaFormat(f"Expected 1 webm file after download, got {len(webm_files)}")
+                *glob.iglob(os.path.join(glob.escape(temp_dir), "*].webm")),
+                *glob.iglob(os.path.join(glob.escape(temp_dir), "*].mp4")),
+            ]
+            if len(video_files) != 1:
+                raise UnknownMediaFormat(f"Expected 1 video file after download, got {len(video_files)}")
             mp3_files: abc.Sequence[str] = glob.glob(os.path.join(glob.escape(temp_dir), "*.mp3"))
             if len(mp3_files) != 1:
                 raise UnknownMediaFormat(f"Expected 1 mp3 file after download, got {len(mp3_files)}")
-            webm_path: str = webm_files[0]
+            video_path: str = video_files[0]
             mp3_path: str = mp3_files[0]
 
-            shutil.move(webm_path, self.path)
+            shutil.move(video_path, self.path)
             shutil.move(mp3_path, self.path)
             self.metadata = dataclasses.replace(
                 self.metadata,
-                video=os.path.basename(webm_path),
+                video=os.path.basename(video_path),
                 mp3=os.path.basename(mp3_path),
             )
 
