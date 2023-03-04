@@ -272,7 +272,7 @@ class Song:
     def _set_raw(self, field: str, value: Optional[str]) -> None:
         if value is not None:
             self.raw_metadata[field] = value
-        else:
+        elif value in self.raw_metadata:
             del self.raw_metadata[field]
 
     def _write(self) -> None:
