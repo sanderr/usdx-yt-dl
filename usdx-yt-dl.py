@@ -4,7 +4,6 @@
 import dataclasses
 import glob
 import itertools
-import functools
 import os
 import re
 import shutil
@@ -13,7 +12,15 @@ import sys
 import tempfile
 from collections import abc
 from dataclasses import dataclass
+from types import ModuleType
 from typing import Optional, Type, TypeVar
+
+mutagen: Optional[ModuleType]
+try:
+    import mutagen.easyid3
+except ImportError:
+    print("mutagen is not installed, continuing without ID3 tag support...")
+    mutagen = None
 
 
 COMMENT_PREFIX: str = "usdx-yt-dl:"
@@ -85,6 +92,8 @@ class Metadata:
     :ivar video: Filename of the video. If set, must be a valid file.
     """
 
+    title: str
+    artist: str
     mp3: Optional[str] = None
     cover: Optional[str] = None
     video: Optional[str] = None
@@ -95,6 +104,8 @@ class Metadata:
     def from_raw_data(
         cls: Type[M],
         *,
+        title: str,
+        artist: str,
         mp3: Optional[str] = None,
         cover: Optional[str] = None,
         video: Optional[str] = None,
@@ -124,6 +135,8 @@ class Metadata:
             tag = video_tag
 
         return cls(
+            title=title,
+            artist=artist,
             mp3=mp3,
             cover=cover,
             video=normalized_video,
@@ -186,9 +199,9 @@ class Song:
         # TODO: this deletes comments if there is more than one
         raw_metadata: dict[str, str] = dict(read_line(line) for line in comment_block)
 
-        def get(field: str, *, required: bool = True) -> Optional[str]:
+        def get_required(field: str) -> str:
             result: Optional[str] = raw_metadata.get(field, None)
-            if result is None and required:
+            if result is None:
                 raise InsufficientData(
                     f"The metadata at '{txt_file}' does not match the expected schema"
                 )
@@ -196,12 +209,14 @@ class Song:
 
         metadata: Metadata = Metadata.from_raw_data(
             # see https://wiki.usdb.eu/txt_files/format
-            mp3=get("MP3"),
-            cover=get("COVER", required=False),
-            video=get("VIDEO", required=False),
+            title=get_required("TITLE"),
+            artist=get_required("ARTIST"),
+            mp3=raw_metadata.get("MP3", None),
+            cover=raw_metadata.get("COVER", None),
+            video=raw_metadata.get("VIDEO", None),
             comment=(
                 raw_comment[len(COMMENT_PREFIX):]
-                if (raw_comment := get("COMMENT", required=False)) is not None
+                if (raw_comment := raw_metadata.get("COMMENT", None)) is not None
                 and raw_comment.startswith(COMMENT_PREFIX)
                 else None
             )
@@ -213,6 +228,7 @@ class Song:
         video_found: bool = self.metadata.video is not None and os.path.exists(os.path.join(self.path, self.metadata.video))
         if mp3_found and video_found:
             # both mp3 and video are set -> nothing to do here, fix permissions just in case
+            self._set_id3_tags()
             self._fix_permissions()
             return
         if mp3_found:
@@ -222,6 +238,7 @@ class Song:
 
         self._set_cover()
         self._download()
+        self._set_id3_tags()
         self._fix_permissions()
         self._write()
 
@@ -262,6 +279,22 @@ class Song:
                 mp3=os.path.basename(mp3_path),
             )
 
+    def _set_id3_tags(self) -> None:
+        if mutagen is None:
+            # ID3 tag support disabled
+            return
+        if self.metadata.mp3 is None:
+            raise Exception("Can not set id3 tags without mp3 file present")
+        path: str = os.path.join(self.path, self.metadata.mp3)
+        if not os.path.exists(path):
+            raise Exception(f"No mp3 file at {path}")
+        mp3: mutagen.easyid3.EasyID3 = mutagen.easyid3.EasyID3(path)
+        mp3["title"] = self.metadata.title
+        mp3["artist"] = self.metadata.artist
+        mp3["albumartist"] = ""
+        mp3["album"] = "USDX library"
+        mp3.save()
+
     def _fix_permissions(self) -> None:
         for file in os.listdir(self.path):
             if os.path.isfile(file):
@@ -274,6 +307,8 @@ class Song:
             del self.raw_metadata[field]
 
     def _write(self) -> None:
+        self._set_raw("TITLE", self.metadata.title)
+        self._set_raw("ARTIST", self.metadata.artist)
         self._set_raw("MP3", self.metadata.mp3)
         self._set_raw("COVER", self.metadata.cover)
         self._set_raw("VIDEO", self.metadata.video)
@@ -315,9 +350,15 @@ def main() -> None:
         count += 1
 
     print(f"Successfully processed {count} songs")
-    print(f"Encountered errors for the following {len(errors)} songs:")
-    for path, error in errors:
-        print(f"\t{path} => {error.message}")
+    if errors:
+        print(f"Encountered errors for the following {len(errors)} songs:")
+        for path, error in errors:
+            print(f"\t{path} => {error.message}")
+    if mutagen is None:
+        print(
+            "Skipped ID3 tagging of mp3 files because the mutagen library is not installed."
+            " Simply run the tool again with mutagen installed to fix ID3 tags (media files will not be downloaded again)."
+        )
 
 
 if __name__ == "__main__":
