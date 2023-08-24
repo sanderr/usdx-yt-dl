@@ -150,7 +150,6 @@ class Metadata:
         def regex(*, audio_only: bool = False) -> str:
             return "(.*,)?%s=([^, \t\n\r\f\v]+)(,.*)?" % ("a" if audio_only else "v")
 
-        # TODO: precompile all regexes
         video_match: Optional[re.Match] = re.fullmatch(regex(), tag)
         audio_match: Optional[re.Match] = re.fullmatch(regex(audio_only=True), tag)
         if video_match is not None and audio_match is not None:
