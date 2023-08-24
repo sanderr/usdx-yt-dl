@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # assumes Python>=3.10, may or may not work with older Python
 
+import contextlib
 import dataclasses
 import glob
 import itertools
@@ -224,17 +225,31 @@ class Song:
         return (metadata, raw_metadata, body)
 
     def process(self) -> None:
-        mp3_found: bool = self.metadata.mp3 is not None and os.path.exists(os.path.join(self.path, self.metadata.mp3))
-        video_found: bool = self.metadata.video is not None and os.path.exists(os.path.join(self.path, self.metadata.video))
-        if mp3_found and video_found:
-            # both mp3 and video are set -> nothing to do here, fix permissions just in case
-            self._set_id3_tags()
-            self._fix_permissions()
-            return
-        if mp3_found:
-            raise ConservativeSkip("Found mp3 file but no video, skipping")
-        if video_found:
-            raise ConservativeSkip("Found video file but no mp3, skipping")
+        files: tuple[Optional[str], Optional[str]] = (self.metadata.mp3, self.metadata.video)
+        outdated: bool = any(
+            filename is not None and f" [{self.metadata.video_tag}]." not in filename for filename in files
+        )
+        if outdated:
+            # clean up old files
+            for filename in files:
+                if filename is not None:
+                    with contextlib.suppress(FileNotFoundError):
+                        os.remove(os.path.join(self.path, filename))
+        else:
+            mp3_found, video_found = tuple(
+                filename is not None
+                and os.path.exists(os.path.join(self.path, filename))
+                for filename in files
+            )
+            if mp3_found and video_found:
+                # both mp3 and video are set -> nothing to do here, fix permissions just in case
+                self._set_id3_tags()
+                self._fix_permissions()
+                return
+            if mp3_found:
+                raise ConservativeSkip("Found mp3 file but no video, skipping")
+            if video_found:
+                raise ConservativeSkip("Found video file but no mp3, skipping")
 
         self._set_cover()
         self._download()
