@@ -64,6 +64,10 @@ class UnknownMediaFormat(SkipException):
     pass
 
 
+class DownloadFailed(SkipException):
+    pass
+
+
 def utf8_contents(path: str) -> str:
     """
     Reads the contents of the file at the given path, making a best effort to convert any non UTF8 characters.
@@ -267,10 +271,13 @@ class Song:
 
     def _download(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            subprocess.check_call(
-                ["yt-dlp", "-xk", "--audio-format", "mp3", "--", self.metadata.video_tag],
-                cwd=temp_dir,
-            )
+            try:
+                subprocess.check_call(
+                    ["yt-dlp", "-xk", "--audio-format", "mp3", "--", self.metadata.video_tag],
+                    cwd=temp_dir,
+                )
+            except subprocess.CalledProcessError:
+                raise DownloadFailed("Something went wrong during download")
 
             video_files: abc.Sequence[str] = [
                 # account for intermediate *.f<format_id>.webm files
