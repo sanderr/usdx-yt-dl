@@ -249,7 +249,7 @@ class Song:
                 and os.path.exists(os.path.join(self.path, filename))
                 for filename in files
             )
-            if mp3_found and video_found:
+            if mp3_found and (video_found or self.metadata.video is None):
                 # both mp3 and video are set -> nothing to do here, fix permissions just in case
                 self._set_id3_tags()
                 self._fix_permissions()
