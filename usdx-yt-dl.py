@@ -351,8 +351,9 @@ class Song:
 
     def _fix_permissions(self) -> None:
         for file in os.listdir(self.path):
-            if os.path.isfile(file):
-                os.chmod(file, 0o640)
+            file_path: str = os.path.join(self.path, file)
+            if os.path.isfile(file_path):
+                os.chmod(file_path, 0o640)
 
     def _set_raw(self, field: str, value: Optional[str]) -> None:
         if value is not None:
