@@ -101,9 +101,11 @@ class Metadata:
     artist: str
     mp3: Optional[str] = None
     cover: Optional[str] = None
+    background: Optional[str] = None
     video: Optional[str] = None
     comment: str
-    video_tag: str
+    video_tag: Optional[str]
+    audio_tag: Optional[str]
 
     @classmethod
     def from_raw_data(
@@ -113,52 +115,48 @@ class Metadata:
         artist: str,
         mp3: Optional[str] = None,
         cover: Optional[str] = None,
+        background: Optional[str] = None,
         video: Optional[str] = None,
         comment: Optional[str] = None,
     ) -> M:
         normalized_video: Optional[str]
         normalized_comment: str
-        tag: str
         if comment is not None:
             # already processed by this tool at some point
             normalized_video = video
             normalized_comment = comment
-            comment_tag: Optional[str] = cls._video_tag_from_usdb_metadata(comment)
-            if comment_tag is None:
-                raise FileCorrupt("Found comment left by this tool but it is corrupt")
-            tag = comment_tag
         else:
             # raw usdb file => extract metadata from video field
-            usdb_tag_missing: InsufficientData = InsufficientData("Failed to find usdb-formatted metadata comment")
-            if video is None:
-                raise usdb_tag_missing
-            video_tag: Optional[str] = cls._video_tag_from_usdb_metadata(video)
-            if video_tag is None:
-                raise usdb_tag_missing
             normalized_video = None
             normalized_comment = video
-            tag = video_tag
+        tags: tuple[Optional[str], Optional[str]] = cls._media_tags_from_usdb_metadata(normalized_comment)
+        if all(tag is None for tag in tags):
+            raise InsufficientData("Failed to find usdb-formatted video or audio tags")
 
         return cls(
             title=title,
             artist=artist,
             mp3=mp3,
             cover=cover,
+            background=background,
             video=normalized_video,
             comment=normalized_comment,
-            video_tag=tag,
+            video_tag=tags[0],
+            audio_tag=tags[1],
         )
 
     @classmethod
-    def _video_tag_from_usdb_metadata(cls, tag: str) -> Optional[str]:
+    def _media_tags_from_usdb_metadata(cls, tag: str) -> tuple[Optional[str], Optional[str]]:
+        """
+        Returns a tuple of video and audio tags.
+        """
+
         def regex(*, audio_only: bool = False) -> str:
             return "(.*,)?%s=([^, \t\n\r\f\v]+)(,.*)?" % ("a" if audio_only else "v")
 
         video_match: Optional[re.Match] = re.fullmatch(regex(), tag)
         audio_match: Optional[re.Match] = re.fullmatch(regex(audio_only=True), tag)
-        if video_match is not None and audio_match is not None:
-            raise ConservativeSkip("Found both audio and video id, this is currently not supported")
-        return video_match.group(2) if video_match is not None else audio_match.group(2) if audio_match is not None else None
+        return tuple(match.group(2) if match is not None else None for match in (video_match, audio_match))
 
 
 class Song:
@@ -217,6 +215,7 @@ class Song:
             artist=get_required("ARTIST"),
             mp3=raw_metadata.get("MP3", None),
             cover=raw_metadata.get("COVER", None),
+            background=raw_metadata.get("BACKGROUND", None),
             video=raw_metadata.get("VIDEO", None),
             comment=(
                 raw_comment[len(COMMENT_PREFIX):]
@@ -230,7 +229,13 @@ class Song:
     def process(self) -> None:
         files: tuple[Optional[str], Optional[str]] = (self.metadata.mp3, self.metadata.video)
         outdated: bool = any(
-            filename is not None and f" [{self.metadata.video_tag}]." not in filename for filename in files
+            filename is not None and f" [{tag}]." not in filename
+            for filename, tag in zip(
+                files, (
+                    self.metadata.audio_tag if self.metadata.audio_tag is not None else self.metadata.video_tag,
+                    self.metadata.video_tag,
+                )
+            )
         )
         if outdated:
             # clean up old files
@@ -263,19 +268,39 @@ class Song:
     def _set_cover(self) -> None:
         jpeg_files: abc.Sequence[str] = glob.glob(os.path.join(glob.escape(self.path), "*.jpg"))
         if not jpeg_files:
-            self.metadata = dataclasses.replace(self.metadata, cover=None)
+            self.metadata = dataclasses.replace(self.metadata, cover=None, background=None)
         elif len(jpeg_files) == 1:
-            self.metadata = dataclasses.replace(self.metadata, cover=os.path.basename(jpeg_files[0]))
+            file: str = os.path.basename(jpeg_files[0])
+            self.metadata = dataclasses.replace(self.metadata, cover=file, background=file)
         else:
             raise UnexpectedState(f"Found more than one jpeg file in '{self.path}'")
 
     def _download(self) -> None:
+        if self.metadata.video_tag is None and self.metadata.audio_tag is None:
+            raise InsufficientData("No video or audio source found")
         with tempfile.TemporaryDirectory() as temp_dir:
             try:
-                subprocess.check_call(
-                    ["yt-dlp", "-xk", "--audio-format", "mp3", "--", self.metadata.video_tag],
-                    cwd=temp_dir,
-                )
+                same_audio: bool = self.metadata.audio_tag is None or self.metadata.audio_tag == self.metadata.video_tag
+                if self.metadata.video_tag is not None:
+                    subprocess.check_call(
+                        [
+                            "yt-dlp",
+                            *(
+                                ["--extract-audio", "--keep-video", "--audio-format", "mp3"]
+                                if same_audio
+                                else []
+                            ),
+                            "--",
+                            self.metadata.video_tag
+                        ],
+                        cwd=temp_dir,
+                    )
+                if not same_audio:
+                    assert self.metadata.audio_tag is not None
+                    subprocess.check_call(
+                        ["yt-dlp", "--extract-audio", "--audio-format", "mp3", "--", self.metadata.audio_tag],
+                        cwd=temp_dir,
+                    )
             except subprocess.CalledProcessError:
                 raise DownloadFailed("Something went wrong during download")
 
@@ -284,19 +309,27 @@ class Song:
                 *glob.iglob(os.path.join(glob.escape(temp_dir), "*].webm")),
                 *glob.iglob(os.path.join(glob.escape(temp_dir), "*].mp4")),
             ]
-            if len(video_files) != 1:
+            if self.metadata.video_tag is not None and len(video_files) != 1:
                 raise UnknownMediaFormat(f"Expected 1 video file after download, got {len(video_files)}")
             mp3_files: abc.Sequence[str] = glob.glob(os.path.join(glob.escape(temp_dir), "*.mp3"))
             if len(mp3_files) != 1:
                 raise UnknownMediaFormat(f"Expected 1 mp3 file after download, got {len(mp3_files)}")
-            video_path: str = video_files[0]
-            mp3_path: str = mp3_files[0]
 
-            shutil.move(video_path, self.path)
+
+            mp3_path: str = mp3_files[0]
             shutil.move(mp3_path, self.path)
+
+            video_name: Optional[str]
+            if self.metadata.video_tag is not None:
+                video_path: str = video_files[0]
+                shutil.move(video_path, self.path)
+                video_name = os.path.basename(video_path)
+            else:
+                video_name = None
+
             self.metadata = dataclasses.replace(
                 self.metadata,
-                video=os.path.basename(video_path),
+                video=video_name,
                 mp3=os.path.basename(mp3_path),
             )
 
@@ -324,7 +357,7 @@ class Song:
     def _set_raw(self, field: str, value: Optional[str]) -> None:
         if value is not None:
             self.raw_metadata[field] = value
-        elif value in self.raw_metadata:
+        elif field in self.raw_metadata:
             del self.raw_metadata[field]
 
     def _write(self) -> None:
@@ -332,6 +365,7 @@ class Song:
         self._set_raw("ARTIST", self.metadata.artist)
         self._set_raw("MP3", self.metadata.mp3)
         self._set_raw("COVER", self.metadata.cover)
+        self._set_raw("BACKGROUND", self.metadata.background)
         self._set_raw("VIDEO", self.metadata.video)
         self._set_raw("COMMENT", COMMENT_PREFIX + self.metadata.comment)
 
