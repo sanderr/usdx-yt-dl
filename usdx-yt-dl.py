@@ -345,8 +345,12 @@ class Song:
         mp3: mutagen.easyid3.EasyID3 = mutagen.easyid3.EasyID3(path)
         mp3["title"] = self.metadata.title
         mp3["artist"] = self.metadata.artist
-        mp3["albumartist"] = ""
+        mp3["albumartist"] = "Various"
         mp3["album"] = "USDX library"
+        delete = ("date", "tracknumber")  # date should be the same for the entire album
+        for d in delete:
+            if d in mp3:
+                del mp3[d]
         mp3.save()
 
     def _fix_permissions(self) -> None:
