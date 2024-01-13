@@ -20,8 +20,15 @@ mutagen: Optional[ModuleType]
 try:
     import mutagen.easyid3
 except ImportError:
-    print("mutagen is not installed, continuing without ID3 tag support...")
+    print("Warning: mutagen is not installed, continuing without ID3 tag support...")
     mutagen = None
+
+RSGAIN: bool
+if shutil.which("rsgain") is not None:
+    RSGAIN = True
+else:
+    print("Warning: rsgain is not installed, continuing without replaygain tagging...")
+    RSGAIN = False
 
 
 COMMENT_PREFIX: str = "usdx-yt-dl:"
@@ -317,6 +324,7 @@ class Song:
 
 
             mp3_path: str = mp3_files[0]
+            self._rsgain(mp3_path)
             shutil.move(mp3_path, self.path)
 
             video_name: Optional[str]
@@ -332,6 +340,20 @@ class Song:
                 video=video_name,
                 mp3=os.path.basename(mp3_path),
             )
+
+    @classmethod
+    def _rsgain(cls, mp3: str) -> None:
+        if not RSGAIN:
+            return
+        subprocess.check_call(
+            [
+                "rsgain",
+                "custom",
+                "--tagmode=i",
+                "--clip-mode=p",
+                mp3,
+            ],
+        )
 
     def _set_id3_tags(self) -> None:
         if mutagen is None:
