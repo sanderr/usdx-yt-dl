@@ -1,5 +1,11 @@
-#!/usr/bin/env python3
-# assumes Python>=3.10, may or may not work with older Python
+#!/usr/bin/env -S uv run
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "yt-dlp>=2024.8.6",
+#     "mutagen>=1.47.0",
+# ]
+# ///
 
 import contextlib
 import dataclasses
@@ -16,12 +22,7 @@ from dataclasses import dataclass
 from types import ModuleType
 from typing import Optional, Type, TypeVar
 
-mutagen: Optional[ModuleType]
-try:
-    import mutagen.easyid3
-except ImportError:
-    print("Warning: mutagen is not installed, continuing without ID3 tag support...")
-    mutagen = None
+import mutagen.easyid3
 
 RSGAIN: bool
 if shutil.which("rsgain") is not None:
@@ -356,9 +357,6 @@ class Song:
         )
 
     def _set_id3_tags(self) -> None:
-        if mutagen is None:
-            # ID3 tag support disabled
-            return
         if self.metadata.mp3 is None:
             raise Exception("Can not set id3 tags without mp3 file present")
         path: str = os.path.join(self.path, self.metadata.mp3)
@@ -402,12 +400,6 @@ class Song:
 
 
 def main() -> None:
-    try:
-        subprocess.check_output(["yt-dlp", "--help"])
-    except subprocess.CalledProcessError:
-        print("ERROR: this script requires yt-dlp")
-        exit(1)
-
     if len(sys.argv) != 2:
         print("Usage: usdx-yt-dl.py <path-to-bulk-dir>")
         exit(1)
@@ -436,11 +428,6 @@ def main() -> None:
         print(f"Encountered errors for the following {len(errors)} songs:")
         for path, error in errors:
             print(f"\t{path} => {error.message}")
-    if mutagen is None:
-        print(
-            "Skipped ID3 tagging of mp3 files because the mutagen library is not installed."
-            " Simply run the tool again with mutagen installed to fix ID3 tags (media files will not be downloaded again)."
-        )
 
 
 if __name__ == "__main__":
