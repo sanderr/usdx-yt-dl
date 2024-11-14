@@ -10,3 +10,21 @@ the source to make sure you know what to expect.
 
 The script has been developed for Python 3.10 but it may or may not work with older Python version. I took care to only use
 built-in libraries, so no packages need to be installed.
+
+
+# How to run
+
+1. Install uv either through your distro's package manager (recommended), or in a venv (instructions below)
+```sh
+python -m venv .env
+source .env/bin/activate
+pip install -U pip uv
+```
+
+2. Optionally install [rsgain](https://github.com/complexlogic/rsgain) if you want your downloaded mp3s
+    to be replaygain tagged. USDX does not support this yet, but there is a
+    [feature request](https://github.com/UltraStar-Deluxe/USDX/issues/638).
+
+3. execute the script: `./usdx-yt-dl.py <path-to-bulk-songs-dir>` or explicitly with uv:
+    `uv run usdx-yt-dl.py <path-to-bulk-songs-dir>`. Uv will make sure to install all
+    required dependencies before running it.
