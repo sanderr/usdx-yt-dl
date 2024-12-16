@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.12"
 # dependencies = [
 #     "yt-dlp>=2024.8.6",
 #     "mutagen>=1.47.0",
@@ -133,8 +133,10 @@ class Metadata:
             # already processed by this tool at some point
             normalized_video = video
             normalized_comment = comment
+        elif video is None:
+            raise InsufficientData("No usdx-yt-dl formatted comment found and no video tag is present")
         else:
-            # raw usdb file => extract metadata from video field
+            # raw usdb file => try to extract metadata from video field
             normalized_video = None
             normalized_comment = video
         tags: tuple[Optional[str], Optional[str]] = cls._media_tags_from_usdb_metadata(normalized_comment)
@@ -312,11 +314,13 @@ class Song:
             except subprocess.CalledProcessError:
                 raise DownloadFailed("Something went wrong during download")
 
-            video_files: abc.Sequence[str] = [
-                # account for intermediate *.f<format_id>.webm files
-                *glob.iglob(os.path.join(glob.escape(temp_dir), "*].webm")),
-                *glob.iglob(os.path.join(glob.escape(temp_dir), "*].mp4")),
-            ]
+            video_files: abc.Sequence[str] = list(
+                itertools.chain.from_iterable(
+                    # account for intermediate *.f<format_id>.webm files
+                    glob.iglob(os.path.join(glob.escape(temp_dir), f"*].{ext}"))
+                    for ext in ("webm", "mp4", "mkv")
+                )
+            )
             if self.metadata.video_tag is not None and len(video_files) != 1:
                 raise UnknownMediaFormat(f"Expected 1 video file after download, got {len(video_files)}")
             mp3_files: abc.Sequence[str] = glob.glob(os.path.join(glob.escape(temp_dir), "*.mp3"))
