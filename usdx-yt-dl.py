@@ -300,6 +300,10 @@ class Song:
                                 if same_audio
                                 else []
                             ),
+                            # USDX has trouble with high res files
+                            "--format-sort",
+                            # TODO: make this configurable
+                            "res:1080",
                             "--",
                             self.metadata.video_tag
                         ],
